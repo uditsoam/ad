@@ -78,15 +78,3 @@ GUI tool used to:
 
 ---
 
-## 9. OSCP Perspective
-
-* AD = Central control system
-* Groups = Power
-* Enumeration is key
-* Goal = Domain Admin
-
----
-
-## 10. Key Takeaway
-
-"AD exploitation is all about understanding relationships between users, groups, and machines."
