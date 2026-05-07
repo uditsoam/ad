@@ -1699,5 +1699,71 @@ evil-winrm -i TARGET_IP -u USER -p PASS
 
 ---
 
+| Attack / Technique     | Tool / Command                 | Kali / Attacker | Victim / Target  | Pre-Req / Credential Needed  | Benefit / Why Important         | Kab Use Karna Hai                            |
+| ---------------------- | ------------------------------ | --------------- | ---------------- | ---------------------------- | ------------------------------- | -------------------------------------------- |
+| Credential Injection   | `runas /netonly`               | ❌               | ✅ Windows victim | Domain creds chahiye         | Network auth as another user    | Jab creds ho but domain joined machine na ho |
+| Network Scan           | `nmap`                         | ✅               | ❌                | No creds                     | DC, ports, services identify    | Initial recon phase                          |
+| DNS Enum               | `dig`, `dnsrecon`, `dnsenum`   | ✅               | ❌                | Mostly no creds              | Internal hosts/DC discover      | Start of AD enum                             |
+| SMB Enum               | `smbclient`, `smbmap`          | ✅               | ❌                | Optional creds               | Shares, files, permissions      | Initial foothold ke baad                     |
+| LDAP Enum              | `ldapsearch`                   | ✅               | ❌                | Usually domain creds         | Users, groups, SPNs, policies   | Valid creds milte hi                         |
+| RPC Enum               | `rpcclient`                    | ✅               | ❌                | Sometimes null session works | User/group enum                 | SMB accessible ho                            |
+| Windows NET Commands   | `net user`, `net group`        | ❌               | ✅                | Logged-in access             | Fast built-in enum              | Windows shell milne ke baad                  |
+| AD Cmdlets             | `Get-ADUser` etc               | ❌               | ✅                | RSAT/module + creds          | Deep AD enumeration             | Domain joined victim                         |
+| PowerView              | `Get-NetUser` etc              | ❌               | ✅                | PowerShell access            | ACL, sessions, shares, DA paths | Internal AD recon                            |
+| CrackMapExec / NetExec | `cme/nxc`                      | ✅               | ❌                | Usually creds                | Validation, spray, enum, exec   | Most important AD tool                       |
+| Kerbrute User Enum     | `kerbrute userenum`            | ✅               | ❌                | No creds                     | Valid usernames                 | Before spraying                              |
+| Password Spraying      | `kerbrute`, `cme`              | ✅               | ❌                | User list required           | Weak password discovery         | After lockout policy check                   |
+| BloodHound Collection  | `SharpHound.exe`               | ❌               | ✅                | Domain user creds            | Attack path mapping             | Early in engagement                          |
+| BloodHound Analysis    | BloodHound GUI                 | ✅               | ❌                | ZIP from SharpHound          | Shortest path to DA             | After collection                             |
+| AS-REP Roasting        | `GetNPUsers.py`                | ✅               | ❌                | No creds OR low priv creds   | Crackable hashes                | No-preauth accounts exist                    |
+| Kerberoasting          | `GetUserSPNs.py`               | ✅               | ❌                | Valid domain creds           | Crack service account password  | SPN accounts found                           |
+| SYSVOL / GPP Hunt      | `Get-GPPPassword`, grep        | ✅/❌             | Both             | Any domain user              | Plaintext/decryptable passwords | Quick win hunting                            |
+| LAPS Enumeration       | CME LAPS module                | ✅               | ❌                | Creds + read permission      | Local admin passwords           | LAPS enabled ho                              |
+| ACL Enumeration        | PowerView/BloodHound           | ❌/✅             | Both             | Domain creds                 | Privilege escalation paths      | Mid/late AD enum                             |
+| Delegation Enum        | PowerView, LDAP                | ❌/✅             | Both             | Domain creds                 | Kerberos abuse paths            | Advanced enum                                |
+| Trust Enumeration      | `Get-ADTrust`, `nltest`        | ❌/✅             | Both             | Domain creds                 | Cross-domain movement           | Multi-domain env                             |
+| Session Hunting        | `Find-DomainUserLocation`      | ❌               | ✅                | Domain creds                 | Find logged-in admins           | DA hunting phase                             |
+| Share Enumeration      | `smbmap`, `Invoke-ShareFinder` | ✅/❌             | Both             | Usually creds                | Sensitive file discovery        | After foothold                               |
+| Local Admin Mapping    | CME `(Pwn3d!)`                 | ✅               | ❌                | Creds/hash                   | Lateral movement targets        | After creds obtained                         |
+| Living Off The Land    | `whoami`, `dsquery`, `wmic`    | ❌               | ✅                | Shell access                 | AV-safe enumeration             | Stealth situations                           |
+| enum4linux             | `enum4linux-ng`                | ✅               | ❌                | Optional creds               | Fast combined enum              | Initial recon                                |
+| WinRM Access           | `evil-winrm`                   | ✅               | ❌                | Valid creds/hash             | Remote PowerShell shell         | Port 5985 open ho                            |
+| Hash Cracking          | `hashcat`, `john`              | ✅               | ❌                | Hashes needed                | Recover plaintext passwords     | Roast/hash dump ke baad                      |
+| Cypher Queries         | BloodHound Queries             | ✅               | ❌                | BloodHound DB                | Fast attack path filtering      | BH analysis phase                            |
+
+
+| Attack / Technique     | Tool / Command                 | Kali / Attacker | Victim / Target  | Pre-Req / Credential Needed  | Benefit / Why Important         | Kab Use Karna Hai                            |
+| ---------------------- | ------------------------------ | --------------- | ---------------- | ---------------------------- | ------------------------------- | -------------------------------------------- |
+| Credential Injection   | `runas /netonly`               | ❌               | ✅ Windows victim | Domain creds chahiye         | Network auth as another user    | Jab creds ho but domain joined machine na ho |
+| Network Scan           | `nmap`                         | ✅               | ❌                | No creds                     | DC, ports, services identify    | Initial recon phase                          |
+| DNS Enum               | `dig`, `dnsrecon`, `dnsenum`   | ✅               | ❌                | Mostly no creds              | Internal hosts/DC discover      | Start of AD enum                             |
+| SMB Enum               | `smbclient`, `smbmap`          | ✅               | ❌                | Optional creds               | Shares, files, permissions      | Initial foothold ke baad                     |
+| LDAP Enum              | `ldapsearch`                   | ✅               | ❌                | Usually domain creds         | Users, groups, SPNs, policies   | Valid creds milte hi                         |
+| RPC Enum               | `rpcclient`                    | ✅               | ❌                | Sometimes null session works | User/group enum                 | SMB accessible ho                            |
+| Windows NET Commands   | `net user`, `net group`        | ❌               | ✅                | Logged-in access             | Fast built-in enum              | Windows shell milne ke baad                  |
+| AD Cmdlets             | `Get-ADUser` etc               | ❌               | ✅                | RSAT/module + creds          | Deep AD enumeration             | Domain joined victim                         |
+| PowerView              | `Get-NetUser` etc              | ❌               | ✅                | PowerShell access            | ACL, sessions, shares, DA paths | Internal AD recon                            |
+| CrackMapExec / NetExec | `cme/nxc`                      | ✅               | ❌                | Usually creds                | Validation, spray, enum, exec   | Most important AD tool                       |
+| Kerbrute User Enum     | `kerbrute userenum`            | ✅               | ❌                | No creds                     | Valid usernames                 | Before spraying                              |
+| Password Spraying      | `kerbrute`, `cme`              | ✅               | ❌                | User list required           | Weak password discovery         | After lockout policy check                   |
+| BloodHound Collection  | `SharpHound.exe`               | ❌               | ✅                | Domain user creds            | Attack path mapping             | Early in engagement                          |
+| BloodHound Analysis    | BloodHound GUI                 | ✅               | ❌                | ZIP from SharpHound          | Shortest path to DA             | After collection                             |
+| AS-REP Roasting        | `GetNPUsers.py`                | ✅               | ❌                | No creds OR low priv creds   | Crackable hashes                | No-preauth accounts exist                    |
+| Kerberoasting          | `GetUserSPNs.py`               | ✅               | ❌                | Valid domain creds           | Crack service account password  | SPN accounts found                           |
+| SYSVOL / GPP Hunt      | `Get-GPPPassword`, grep        | ✅/❌             | Both             | Any domain user              | Plaintext/decryptable passwords | Quick win hunting                            |
+| LAPS Enumeration       | CME LAPS module                | ✅               | ❌                | Creds + read permission      | Local admin passwords           | LAPS enabled ho                              |
+| ACL Enumeration        | PowerView/BloodHound           | ❌/✅             | Both             | Domain creds                 | Privilege escalation paths      | Mid/late AD enum                             |
+| Delegation Enum        | PowerView, LDAP                | ❌/✅             | Both             | Domain creds                 | Kerberos abuse paths            | Advanced enum                                |
+| Trust Enumeration      | `Get-ADTrust`, `nltest`        | ❌/✅             | Both             | Domain creds                 | Cross-domain movement           | Multi-domain env                             |
+| Session Hunting        | `Find-DomainUserLocation`      | ❌               | ✅                | Domain creds                 | Find logged-in admins           | DA hunting phase                             |
+| Share Enumeration      | `smbmap`, `Invoke-ShareFinder` | ✅/❌             | Both             | Usually creds                | Sensitive file discovery        | After foothold                               |
+| Local Admin Mapping    | CME `(Pwn3d!)`                 | ✅               | ❌                | Creds/hash                   | Lateral movement targets        | After creds obtained                         |
+| Living Off The Land    | `whoami`, `dsquery`, `wmic`    | ❌               | ✅                | Shell access                 | AV-safe enumeration             | Stealth situations                           |
+| enum4linux             | `enum4linux-ng`                | ✅               | ❌                | Optional creds               | Fast combined enum              | Initial recon                                |
+| WinRM Access           | `evil-winrm`                   | ✅               | ❌                | Valid creds/hash             | Remote PowerShell shell         | Port 5985 open ho                            |
+| Hash Cracking          | `hashcat`, `john`              | ✅               | ❌                | Hashes needed                | Recover plaintext passwords     | Roast/hash dump ke baad                      |
+| Cypher Queries         | BloodHound Queries             | ✅               | ❌                | BloodHound DB                | Fast attack path filtering      | BH analysis phase                            |
+
+
 *Generated for OSCP/CRTP/CTF quick reference — Every payload, every technique.*
 *⚠️ For authorized penetration testing and educational use only.*
